@@ -1,0 +1,134 @@
+#!/usr/bin/perl
+
+#pullAndRename
+# to pull current ETD content from Acumen, 
+# rename it and organize it as needed for the DSpace Simple Archive Format described in
+# https://wiki.duraspace.org/display/DSDOC5x/Importing+and+Exporting+Items+via+Simple+Archive+Format
+
+# pull supplemental files from S:\Digital Projects\Other\IncomingDigital\ETD_supp  where Alissa has repackaged the tgz as zip
+# will have to modify this to generate the DC files from the MODS.
+
+# this version generates simple DC files to test the upload
+
+# jody DeRidder, 2016-06-17
+
+$suppFileDir = "/cifs-mount/Other/IncomingDigital/ETD_supp/";
+$matchfile = "./u0015_0000001_match.txt";
+$outbase = "./archive_directory/";
+$inbase = "/srv/www/htdocs/content/u0015/0000001/";
+$mdbase = "/cifs-mount12/Metadata/ETD/DSpace/";
+$count = 0;  # used to create item count, which starts at item_000
+
+opendir(BASE, $inbase) or die "can't open $inbase\n";
+while ($file = readdir(BASE)){
+   if ($file =~ /^\./ || $file =~ /Metadata/){ next;}
+   if ($file =~ /\d{7}/){
+     $itemdir = $inbase.$file."/";
+     $itemID = "u0015_0000001_".$file;
+
+     if (-d $itemdir){ 
+       $myDir{$itemID} = $itemdir;
+       $itemID = "u0015_0000001_".$file;
+       $md = $mdbase.$itemID.".dc.xml";
+      
+# TEST
+       open (MD, ">".$md) or die "can't open $md\n";
+       print MD '<?xml version="1.0" encoding="UTF-8"?>'."\n";
+       print MD "<dublin_core>\n";
+       print MD '  <dcvalue element="title" qualifier="none">'.$itemID." ETD</dcvalue>\n";
+       
+       $myMD{$itemID} = $md;
+# here, find out what year, and whether theses or dissertation
+
+       $mods = $itemdir."Metadata/".$itemID.".mods.xml";
+#For testing only!!
+   #    $myMD{$itemID} = $mods;
+       $level = `grep "etd:level" $mods`;
+       if ($level =~ /master/i){ $outbase = "./theses/";}
+       elsif($level =~ /doctor/i){ $outbase = "./dissertations/";}
+       else{
+         $level = `grep "etd:name" $mods`;
+         if ($level =~ /M/){ $outbase = "./theses/";}
+         else { $outbase = "./dissertations/";}
+         }
+       $mydate = `grep dateIssued $mods`;
+       if ($mydate =~ /> *([\d]{4}) *</){
+          $mydate = $1;
+          $outbase .= $1."/";
+          }
+       else{ print "ERROR! no dateIssued year for $mods\n";}      
+       print MD '  <dcvalue element="date" qualifier="issued">'.$mydate."</dcvalue>\n";
+       print MD "</dublin_core>\n";
+       close(MD);
+
+       $myLoc{$itemID} = $outbase;
+       push (@{$outDirList{$outbase}}, $itemID);
+
+       $myFile1{$itemID} = $itemdir.$itemID.".pdf";
+       if (! -e $myFile1{$itemID}){ print "ERROR!  ".$myFile1{$itemID}." does not exist for $itemID\n";}
+       }
+     }
+   }
+close(BASE);
+
+opendir(SUPP, $suppFileDir) or die "can't look in $suppFileDir\n";
+while ($file = readdir(SUPP)){
+   if ($file =~ /^\./){ next;}
+   $itemID = substr($file, 0,21);
+   $path = $suppFileDir.$file;
+   if (-d $path){ next;}
+   push (@{$mySupp{$itemID}}, $path);
+   }
+close(SUPP);
+
+$handlebase = "http://hdl.handle.net/20.500.11858/";
+$count = 30;
+
+open (MATCH, ">".$matchfile) or die "can't write to $matchfile\n";
+print MATCH "id_2009\tDSpaceNumber\n";
+@itemIDs = keys(%myDir);
+@outbases = sort keys (%outDirList);
+foreach $outbase (@outbases){
+  print "$outbase\n";  # need to know the order for uploads to get the handles in sequence
+  @myItems = sort @{$outDirList{$outbase}};
+  foreach $itemID (@myItems){
+
+    @myfiles = @{$mySupp{$itemID}};
+    ($mynum = $itemID) =~ s,.*\_,,;
+    $mynum = sprintf("%04d", $mynum);
+    $myhandle = $handlebase.$count;
+    $count ++;
+    $itemnum = "item_$mynum";
+    
+#    $outbase = $myLoc{$itemID};
+    print MATCH $itemID."\t".$myhandle."\n";
+    $mydir = $outbase.$itemnum."/";
+    `mkdir -p $mydir`; 
+    $contents = $mydir."contents";
+    open (CONTENTS, ">".$contents) or die "can't write to $contents\n";
+    if (-e $myMD{$itemID}){
+       $md = $mydir."dublin_core.xml";
+       $oldmd = $myMD{$itemID};
+       `cp $oldmd $md`;
+       }
+    $myPDF = $myFile1{$itemID};
+    $myMainFile = $mydir."file_1.pdf";
+    print CONTENTS "file_1.pdf\n";
+    `cp $myPDF $myMainFile`;
+    $addme = 2;
+    foreach $file (@myfiles){
+       ($ext = $file) =~ s,.*?\.,,; # remove all up to extension
+        $filename = "file_".$addme.".".$ext;
+        $addme ++;
+        $newlocation = $mydir.$filename;
+        print CONTENTS "$filename\n";
+        `cp $file $newlocation`;
+        }
+     close(CONTENT);
+     }
+   }
+ close(MATCH);
+    
+    
+   
+   
