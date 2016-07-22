@@ -31,7 +31,8 @@ while ($file = readdir(BASE)){
        $itemID = "u0015_0000001_".$file;
        $md = $mdbase.$itemID.".dc.xml";
       
-# TEST
+# TEST  : note, this is a tiny xml file in the form needed by dspace, just as a placeholder
+# till we have the metadata transforms ready.
        open (MD, ">".$md) or die "can't open $md\n";
        print MD '<?xml version="1.0" encoding="UTF-8"?>'."\n";
        print MD "<dublin_core>\n";
